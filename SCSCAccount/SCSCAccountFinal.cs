@@ -12,19 +12,21 @@ namespace SCSCAccount
 
         public void Execute(IServiceProvider serviceProvider)
         {
-            // Contain all the meta data
+            // ============ Initialize variables used in the plugin ============
+            // Contain all the metadata
             IPluginExecutionContext context = (IPluginExecutionContext)serviceProvider.GetService(typeof(IPluginExecutionContext));
-            // Perform CRUD operations
+            // Functions for performing CRUD operations
             IOrganizationServiceFactory serviceFactory = (IOrganizationServiceFactory)serviceProvider.GetService(typeof(IOrganizationServiceFactory));
             IOrganizationService service = serviceFactory.CreateOrganizationService(context.UserId);
-            // Logging
+            // Tracing, logging and auditing
             ITracingService tracing = (ITracingService)serviceProvider.GetService(typeof(ITracingService));
-
 
             try
             {
-                // Verify the plugin is running
-                tracing.Trace("Verify outside the context condition");
+                // ============ Verify plugin is running before the actual operation ============
+                tracing.Trace("> Verify outside the context condition");
+                // The custom action calling this plugin is a bound custom action, so to pass multiple GUID, the loop is inside the JS script, hurt performance
+                // To improve performance, use unbound custom action, it pass a GUID array once, the loop is inside the plugin 
                 if (context.InputParameters.Contains("Target") && context.InputParameters["Target"] is EntityReference)
                 {
                     // Plugin is activated using Custom Action, so 'EntityReference' is used
@@ -33,9 +35,12 @@ namespace SCSCAccount
                     // We are using 'EntityReference' so we can get only logical name and GUID
                     string entityRefLogicalName = entityRef.LogicalName.ToString();
                     Guid entityRefGUID = entityRef.Id;
-                    // Retrieve the full data
+                    
+                    // Retrieve the original full data
                     Entity original = service.Retrieve(entityRefLogicalName, entityRefGUID, new ColumnSet(true));
+                    tracing.Trace("> Retrieve original data completed");
 
+                    // Cloning process
                     var clone = new CRfF8_ScAccount();
                     var props = typeof(CRfF8_ScAccount).GetProperties();
                     foreach (var prop in props)
@@ -75,7 +80,7 @@ namespace SCSCAccount
                     }
                     clone.CRfF8_ScAccountName = "[Cloned] " + clone.CRfF8_ScAccountName;
                     var clonedId = service.Create(clone);
-                    tracing.Trace("Verify cloning completed");
+                    tracing.Trace("> Verify cloning completed");
 
                     // Set the output parameter as "success" once completed
                     //context.OutputParameters["output"] = "success";
@@ -93,9 +98,8 @@ namespace SCSCAccount
                             </fetch>";
                     var contacts = service.RetrieveMultiple(new FetchExpression(fetchXml));
                     //tracing.Trace("Counter: {0}", contacts.Entities.Count.ToString());
-                    tracing.Trace("Verify getting contacts");
-
-                    // For each contact add the associate to the clone one
+                    tracing.Trace("> Verify getting {0} contacts completed", contacts.Entities.Count);
+                    // For each contact from the original add associate it to the cloned one
                     foreach (var contact in contacts.Entities)
                     {
                         var associateRequest = new AssociateRequest
@@ -120,6 +124,7 @@ namespace SCSCAccount
                         //};
                         //service.Execute(disassociateRequest);
                     }
+
                     // Set the output parameter as "success" once completed
                     context.OutputParameters["output"] = "success";
                     tracing.Trace("Completed");
